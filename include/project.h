@@ -1,0 +1,3 @@
+#pragma once
+// ...existing code...
+// This header can be used for project-wide includes or definitions
