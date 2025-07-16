@@ -1,0 +1,9 @@
+.pio/build/esp32dev/liba34/WAVFileReader/WAVFileReader.cpp.o: \
+ lib/WAVFileReader/WAVFileReader.cpp \
+ C:/Users/giorg/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/log/include/esp_log.h \
+ C:/Users/giorg/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/dio_qspi/include/sdkconfig.h \
+ C:/Users/giorg/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/esp_rom/include/esp_rom_sys.h \
+ C:/Users/giorg/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/soc/esp32/include/soc/reset_reasons.h \
+ C:/Users/giorg/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/esp_rom/include/esp32/rom/ets_sys.h \
+ C:/Users/giorg/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/log/include/esp_log_internal.h \
+ lib/WAVFileReader/WAVFileReader.h lib/WAVFile/WAVFile.h
