@@ -33,7 +33,7 @@
 #include "Output.h"
 #include "config.h"
 
-static const char *TAG = "app"; // Kubit v1.9 - Final Version
+static const char *TAG = "app";
 
 // SD card pin definitions (only what we need)
 #define PIN_NUM_MISO GPIO_NUM_4
@@ -183,10 +183,8 @@ uint16_t CTtP229TouchButton::GetPressedButton() {
         }
     }
     
-    // INVERT the logic: TTP229 reads LOW when pressed, HIGH when not pressed
-    // So we need to invert the bits to get the actual pressed buttons
-    uint16_t maxMask = (1 << maxCnt) - 1; // Create mask for valid bits (0xFF for 8 buttons, 0xFFFF for 16)
-    buttonsPressed = (~buttonsPressed) & maxMask; // Invert and mask to valid range
+    // TTP229 in normal mode: LOW when pressed, HIGH when not pressed
+    // buttonsPressed already contains the correct state (no inversion needed)
     
     return buttonsPressed;
 }
