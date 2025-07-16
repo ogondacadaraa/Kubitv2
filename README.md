@@ -1,8 +1,4 @@
-# ESP32 Kubit Robot Project
 
-A sophisticated ESP32-based robot with audio capabilities, gyroscope control, emotion system, and touch interface. This project has been optimized to eliminate all runtime deprecation warnings while maintaining full functionality.
-
-## 🎯 Features
 
 ### Core Functionality
 - **Touch Interface**: TTP229 16-key touch keypad for robot control
@@ -15,7 +11,7 @@ A sophisticated ESP32-based robot with audio capabilities, gyroscope control, em
 ### Audio Capabilities
 - **Sound Effects**: Audio feedback for all robot actions
 - **File Support**: WAV file playback from SD card
-- **Volume Control**: Adjustable audio levels
+
 - **I2S Output**: High-quality digital audio output
 
 ### Storage
@@ -61,28 +57,6 @@ A sophisticated ESP32-based robot with audio capabilities, gyroscope control, em
 - SDA: GPIO 21
 - SCL: GPIO 22
 
-## 🛠️ Software Setup
-
-### Prerequisites
-- [PlatformIO](https://platformio.org/) installed
-- ESP32 development framework
-- Git for version control
-
-### Build and Upload
-```bash
-# Clone the repository
-git clone <your-repo-url>
-cd 250622-132811-esp32dev
-
-# Build the project
-platformio run
-
-# Upload to ESP32
-platformio run --target upload
-
-# Monitor serial output
-platformio device monitor --baud 115200
-```
 
 ## 🎮 Controls
 
@@ -96,18 +70,6 @@ platformio device monitor --baud 115200
 7. **Button 7**: Start/Stop/Pause execution
 8. **Button 8**: Head vibration
 
-### Operation Modes
-- **Programming Mode**: Add movement commands to buffer
-- **Execution Mode**: Run programmed sequence
-- **Emotion Mode**: Triggered by specific button patterns
-
-## 🧠 Emotion System
-
-The robot recognizes button patterns and responds with emotions:
-- **CONFUSED**: Rapid button presses (3+ times)
-- **HAPPY**: Specific sequences
-- **EXCITED**: Pattern recognition
-- Each emotion triggers unique movements and sounds
 
 ## 📁 Project Structure
 
@@ -136,14 +98,6 @@ The robot recognizes button patterns and responds with emotions:
 └── README.md                 # This file
 ```
 
-## ✅ Optimization Notes
-
-This project has been specifically optimized to:
-- **Eliminate Runtime Warnings**: No legacy ADC or I2S driver warnings
-- **Clean Boot Sequence**: Minimal startup messages
-- **Efficient Memory Usage**: Optimized for ESP32 constraints
-- **Modular Design**: Easy to extend and modify
-
 ### Removed Components
 To eliminate deprecation warnings, the following components were removed:
 - Infrared sensors and line following
@@ -151,13 +105,6 @@ To eliminate deprecation warnings, the following components were removed:
 - Legacy I2S microphone sampling
 - Unused audio input components
 
-## 🔧 Troubleshooting
-
-### Common Issues
-1. **No Audio Output**: Check I2S wiring and audio files on SD card
-2. **Touch Not Working**: Verify TTP229 connections and power
-3. **Motors Not Moving**: Check L298N wiring and power supply
-4. **Gyroscope Issues**: Ensure I2C connections and calibration
 
 ### Serial Monitor
 Monitor at 115200 baud for debug information:
@@ -167,14 +114,4 @@ Monitor at 115200 baud for debug information:
 - Command execution
 - Error messages
 
-## 📜 License
 
-This project is open source. Feel free to modify and distribute.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
-
-## 📞 Support
-
-For questions or issues, please check the documentation or open an issue in the repository.
