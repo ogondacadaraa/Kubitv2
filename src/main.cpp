@@ -33,7 +33,7 @@
 #include "Output.h"
 #include "config.h"
 
-static const char *TAG = "app";
+static const char *TAG = "app"; // Kubit v1.9 - Final Version
 
 // SD card pin definitions (only what we need)
 #define PIN_NUM_MISO GPIO_NUM_4
