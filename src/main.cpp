@@ -96,6 +96,14 @@ bool microphoneActive = false; // Track microphone state
 unsigned long startStopButtonPressTime = 0;
 bool isVibrating = false;
 
+// Multitouch and Emotion System Variables
+uint16_t currentTouchState = 0; // Current buttons pressed (bitmask)
+uint16_t lastTouchState = 0;    // Previous touch state
+unsigned long touchStartTime = 0;
+unsigned long touchHoldTime = 500; // Minimum hold time for multitouch (ms)
+bool multitouchActive = false;
+bool emotionPlaying = false;
+
 // Audio control variables
 TaskHandle_t audioTaskHandle = NULL;
 const char* audioFileToPlay = NULL;
@@ -129,11 +137,11 @@ private:
       uint16_t PreviousButtonValue;
     };
     static CTtp229Prop g_prop;
-    static uint16_t GetPressedButton();
     static uint8_t GetButtonNumberFromFlag(uint16_t buttonsChanged);
 public:
     static void Configure(int sclPin, int sdoPin, bool is16Button = true);
     static CTtp229ButtonEvent GetButtonEvent();
+    static uint16_t GetPressedButton(); // Make this public for multitouch
 };
 
 // Forward Declarations
@@ -153,6 +161,10 @@ void addCommand(int cmd, const char* name);
 void executeCommands();
 void executeSingleCommand(int command);
 void performHeadVibration();
+void handleMultitouch(uint16_t touchMask);
+void playEmotion(const char* emotionName);
+bool checkEmotionCombination(uint16_t touchMask);
+uint8_t countBitsSet(uint16_t value);
 
 
 // TTP229 Implementation
@@ -170,6 +182,12 @@ uint16_t CTtP229TouchButton::GetPressedButton() {
             buttonsPressed |= (1 << ndx);
         }
     }
+    
+    // INVERT the logic: TTP229 reads LOW when pressed, HIGH when not pressed
+    // So we need to invert the bits to get the actual pressed buttons
+    uint16_t maxMask = (1 << maxCnt) - 1; // Create mask for valid bits (0xFF for 8 buttons, 0xFFFF for 16)
+    buttonsPressed = (~buttonsPressed) & maxMask; // Invert and mask to valid range
+    
     return buttonsPressed;
 }
 uint8_t CTtP229TouchButton::GetButtonNumberFromFlag(uint16_t buttonsChanged) {
@@ -187,16 +205,17 @@ uint8_t CTtP229TouchButton::GetButtonNumberFromFlag(uint16_t buttonsChanged) {
 void CTtP229TouchButton::Configure(int sclPin, int sdoPin, bool is16Button) {
     g_prop.SclPin = sclPin;
     g_prop.SdoPin = sdoPin;
-    g_prop.Is16Button = is16Button;
+    g_prop.Is16Button = false; // Force 8-button mode for stability
     g_prop.PreviousButtonValue = 0;
     pinMode(sclPin, OUTPUT);
     digitalWrite(sclPin, HIGH);
     pinMode(sdoPin, INPUT);
-    Serial.printf("TTP229 Configured - SCL: %d, SDO: %d, Keys: %d\n", sclPin, sdoPin, is16Button ? 16 : 8);
+    Serial.printf("TTP229 Configured - SCL: %d, SDO: %d, Keys: %d (FORCED 8-button mode)\n", sclPin, sdoPin, 8);
 }
 CTtp229ButtonEvent CTtP229TouchButton::GetButtonEvent() {
     CTtp229ButtonEvent returnValue = {0, 0};
     uint16_t currValue = GetPressedButton();
+    
     uint16_t changes = g_prop.PreviousButtonValue ^ currValue;
     uint16_t pressed = (changes & currValue);
     uint16_t released = (changes & g_prop.PreviousButtonValue);
@@ -250,8 +269,9 @@ void recordingTask(void *parameter) {
   
   // Stop any playing audio first to free I2S resources
   if (isPlayingAudio) {
+    isPlayingAudio = false; // Signal to stop first
     playAudio(nullptr); // Correctly signal the audio task to stop
-    vTaskDelay(pdMS_TO_TICKS(300)); // Give it more time to clean up
+    vTaskDelay(pdMS_TO_TICKS(500)); // Give it more time to clean up
   }
 
   int16_t *samples = (int16_t *)malloc(sizeof(int16_t) * 1024);
@@ -407,7 +427,7 @@ void audioPlaybackTask(void *parameter) {
     input->stop();
     microphoneActive = false;
     Serial.println("Stopped microphone for audio playback");
-    vTaskDelay(pdMS_TO_TICKS(100)); // Give I2S time to properly release
+    vTaskDelay(pdMS_TO_TICKS(200)); // Give I2S more time to properly release
   }
 
   FILE *audioFile = fopen(fname, "rb");
@@ -576,7 +596,7 @@ void setup() {
 
   // Initialize Touch Keypad
   ESP_LOGI(TAG, "Initializing Touch Keypad");
-  g_ttp229Button.Configure(SCLPin, SDAPin, true);
+  g_ttp229Button.Configure(SCLPin, SDAPin, false); // Force 8-button mode
 
   // Initialize Motor Controller
   ESP_LOGI(TAG, "Initializing Motor Controller");
@@ -685,18 +705,122 @@ void loop() {
 // ====================================================================================
 
 void readTouchButtons() {
-  CTtp229ButtonEvent buttonEvent = g_ttp229Button.GetButtonEvent();
-  if (buttonEvent.ButtonNumber != 0 && buttonEvent.ButtonNumber <= 8) {
-    if (buttonEvent.IsButtonReleased) {
-      handleButtonRelease(buttonEvent.ButtonNumber);
+  // Get raw button state directly from TTP229 (now properly inverted)
+  uint16_t rawButtons = CTtP229TouchButton::GetPressedButton();
+  
+  currentTouchState = rawButtons;
+  
+  // Count how many buttons are currently pressed
+  uint8_t buttonsPressed = countBitsSet(currentTouchState);
+  
+  // Debug output when touch state changes
+  static uint16_t lastDebugState = 0;
+  if (currentTouchState != lastDebugState) {
+    Serial.printf("🎯 TOUCH STATE: %d buttons pressed, mask=0x%02X (", buttonsPressed, currentTouchState);
+    for (int i = 0; i < 8; i++) {
+      if (currentTouchState & (1 << i)) {
+        Serial.printf("%d ", i + 1);
+      }
+    }
+    Serial.println(")");
+    lastDebugState = currentTouchState;
+  }
+  
+  // Allow any number of buttons (removed max limit)
+  // Serial.printf("🎯 Detected %d buttons pressed\n", buttonsPressed);
+  
+  // Handle multitouch (2 or more buttons)
+  if (buttonsPressed >= 2) {
+    if (!multitouchActive) {
+      // Start of multitouch
+      multitouchActive = true;
+      touchStartTime = millis();
+      Serial.printf("🖐️ MULTITOUCH START: %d buttons, mask=0x%02X\n", buttonsPressed, currentTouchState);
+    } else if (currentTouchState != lastTouchState) {
+      // Touch pattern changed, restart timer
+      touchStartTime = millis();
+      Serial.printf("🖐️ MULTITOUCH CHANGED: %d buttons, mask=0x%02X\n", buttonsPressed, currentTouchState);
     } else {
-      handleButtonPress(buttonEvent.ButtonNumber);
+      // Check if multitouch has been held long enough and is stable
+      if (millis() - touchStartTime >= touchHoldTime) {
+        // Execute multitouch command
+        handleMultitouch(currentTouchState);
+        multitouchActive = false; // Reset to prevent repeated execution
+        
+        // Add delay to prevent immediate re-triggering
+        vTaskDelay(pdMS_TO_TICKS(1000));
+      }
+    }
+  } 
+  // Handle single touch (1 button)
+  else if (buttonsPressed == 1) {
+    if (multitouchActive) {
+      // End multitouch without executing if it was too short
+      multitouchActive = false;
+      Serial.println("🖐️ MULTITOUCH CANCELLED (changed to single touch)");
+    }
+    
+    // Handle single button press/release using direct bit detection
+    // Find which button is pressed
+    for (int i = 0; i < 8; i++) {
+      if (currentTouchState & (1 << i)) {
+        uint8_t buttonNumber = i + 1; // Convert to 1-based button numbering
+        
+        // Check if this is a new press (wasn't pressed before)
+        if (!(lastTouchState & (1 << i))) {
+          Serial.printf("🔘 SINGLE BUTTON PRESS: %d\n", buttonNumber);
+          handleButtonPress(buttonNumber);
+        }
+        break; // Only process one button for single touch
+      }
+    }
+    
+    // Handle button releases 
+    for (int i = 0; i < 8; i++) {
+      if ((lastTouchState & (1 << i)) && !(currentTouchState & (1 << i))) {
+        uint8_t buttonNumber = i + 1; // Convert to 1-based button numbering
+        Serial.printf("🔘 SINGLE BUTTON RELEASE: %d\n", buttonNumber);
+        handleButtonRelease(buttonNumber);
+        break; // Only process one button release at a time
+      }
     }
   }
+  // Handle no touch (0 buttons)
+  else {
+    if (multitouchActive) {
+      // End multitouch without executing
+      multitouchActive = false;
+      Serial.println("🖐️ MULTITOUCH ENDED (no buttons)");
+    }
+    
+    // Check for button releases using direct bit detection
+    for (int i = 0; i < 8; i++) {
+      if ((lastTouchState & (1 << i)) && !(currentTouchState & (1 << i))) {
+        uint8_t buttonNumber = i + 1; // Convert to 1-based button numbering
+        Serial.printf("🔘 BUTTON RELEASE (no touch): %d\n", buttonNumber);
+        handleButtonRelease(buttonNumber);
+      }
+    }
+  }
+  
+  lastTouchState = currentTouchState;
 }
 
 void handleButtonPress(uint8_t buttonNumber) {
     if (!emotionSystem) return;
+
+    // Don't interrupt emotions with single button presses
+    if (emotionPlaying) {
+        Serial.println("🎭 Emotion playing, ignoring single button press");
+        return;
+    }
+
+    // CRITICAL: Don't allow audio operations while recording is active to prevent crashes
+    // EXCEPT for the record button which should be able to stop recording
+    if (isRecording && buttonNumber != TOUCH_BUTTON_RECORD_VOICE) {
+        Serial.printf("🎤 Recording active - button %d press ignored to prevent I2S conflict\n", buttonNumber);
+        return;
+    }
 
     // First, check if this button press completes an emotion sequence.
     bool emotionTriggered = emotionSystem->addButtonToSequence(buttonNumber);
@@ -708,9 +832,9 @@ void handleButtonPress(uint8_t buttonNumber) {
     }
 
     // If NO emotion was triggered, we can proceed with normal button logic.
-    // This includes stopping any currently playing sound or non-critical emotion.
+    // ALWAYS stop any currently playing sound for immediate audio feedback
     if (isPlayingAudio) {
-        playAudio(nullptr); // Stop audio gracefully
+        playAudio(nullptr); // Stop audio gracefully to allow new sound
     }
     if (emotionSystem->isEmotionActive()) {
         emotionSystem->forceStopEmotion();
@@ -775,9 +899,14 @@ void handleButtonPress(uint8_t buttonNumber) {
             if (isRecording) {
                 // This signals the recording task to stop
                 isRecording = false; 
+                Serial.println("⏹️ Recording stopped by button press");
                 // The recording task will play the "off" sound and add the command
             } else {
-                // Start recording
+                // Start recording - but only if no audio is playing
+                if (isPlayingAudio) {
+                    Serial.println("🎤 Cannot start recording while audio is playing");
+                    return;
+                }
                 playAudio("/sdcard/record_on.wav");
                 recordAudio();
             }
@@ -959,4 +1088,130 @@ void turnRight() {
 void stopMotors() {
   digitalWrite(MOTOR_IN1, LOW); digitalWrite(MOTOR_IN2, LOW);
   digitalWrite(MOTOR_IN3, LOW); digitalWrite(MOTOR_IN4, LOW);
+}
+
+// ====================================================================================
+//                          MULTITOUCH AND EMOTION FUNCTIONS
+// ====================================================================================
+
+// Count the number of bits set in a value (number of buttons pressed)
+uint8_t countBitsSet(uint16_t value) {
+  uint8_t count = 0;
+  while (value) {
+    count += value & 1;
+    value >>= 1;
+  }
+  return count;
+}
+
+// Handle multitouch combinations
+void handleMultitouch(uint16_t touchMask) {
+  Serial.printf("🎭 EXECUTING MULTITOUCH: mask=0x%04X\n", touchMask);
+  
+  // Check if this is an emotion combination
+  if (checkEmotionCombination(touchMask)) {
+    return; // Emotion was played, don't process as regular multitouch
+  }
+  
+  // Handle other multitouch combinations
+  switch (touchMask) {
+    case 0x03: // Buttons 1+2 (Forward+Backward)
+      Serial.println("🎭 Multitouch: Emergency Stop");
+      playAudio("/sdcard/emergency_stop.wav");
+      executing = false;
+      paused = false;
+      stopMotors();
+      break;
+      
+    case 0x0C: // Buttons 3+4 (Left+Right) 
+      Serial.println("🎭 Multitouch: Calibrate Gyroscope");
+      playAudio("/sdcard/calibrating.wav");
+      if (gyro) {
+        gyro->initialize(); // Re-calibrate
+      }
+      break;
+      
+    case 0x30: // Buttons 5+6 (Delete+Record)
+      Serial.println("🎭 Multitouch: Clear All + Factory Reset");
+      playAudio("/sdcard/factory_reset.wav");
+      commandCount = 0;
+      hasRecording = false;
+      break;
+      
+    case 0xC0: // Buttons 7+8 (Start+Head)
+      Serial.println("🎭 Multitouch: System Info");
+      playAudio("/sdcard/system_info.wav");
+      Serial.printf("Commands: %d, Recording: %s, Executing: %s\n", 
+                   commandCount, hasRecording ? "Yes" : "No", executing ? "Yes" : "No");
+      break;
+      
+    default:
+      Serial.printf("🎭 Unknown multitouch combination: 0x%04X\n", touchMask);
+      playAudio("/sdcard/beep.wav"); // Use beep instead of unknown.wav
+      break;
+  }
+}
+
+// Check if the touch combination triggers an emotion
+bool checkEmotionCombination(uint16_t touchMask) {
+  // New emotion combinations as requested: 1+8, 1+5, 1+6+8, 1+5+6+7+8
+  switch (touchMask) {
+    case 0x81: // Buttons 1+8 (Forward+Head)
+      playEmotion("happy");
+      return true;
+      
+    case 0x11: // Buttons 1+5 (Forward+Delete)
+      playEmotion("sad");
+      return true;
+      
+    case 0xA1: // Buttons 1+6+8 (Forward+Record+Head) - 0x01 + 0x20 + 0x80 = 0xA1
+      playEmotion("excited");
+      return true;
+      
+    case 0xF1: // Buttons 1+5+6+7+8 (Forward+Delete+Record+Start+Head) - 0x01 + 0x10 + 0x20 + 0x40 + 0x80 = 0xF1
+      playEmotion("love");
+      return true;
+      
+    default:
+      return false; // Not an emotion combination
+  }
+}
+
+// Play an emotion sequence (AUDIO ONLY - no robot movements)
+void playEmotion(const char* emotionName) {
+  if (emotionPlaying) {
+    Serial.println("🎭 Emotion already playing, ignoring new emotion");
+    return;
+  }
+  
+  emotionPlaying = true;
+  Serial.printf("🎭 PLAYING EMOTION: %s\n", emotionName);
+  
+  // Map emotion names to existing audio files on SD card
+  const char* audioFile = "/sdcard/beep.wav"; // Default fallback
+  
+  if (strcmp(emotionName, "happy") == 0) {
+    audioFile = "/sdcard/greeting.wav"; // Use greeting for happy
+  } else if (strcmp(emotionName, "sad") == 0) {
+    audioFile = "/sdcard/stop.wav"; // Use stop for sad
+  } else if (strcmp(emotionName, "excited") == 0) {
+    audioFile = "/sdcard/start.wav"; // Use start for excited
+  } else if (strcmp(emotionName, "love") == 0) {
+    audioFile = "/sdcard/complete.wav"; // Use complete for love
+  }
+  
+  // Play the emotion audio
+  playAudio(audioFile);
+  
+  // Create simple task to reset emotion flag when audio finishes
+  xTaskCreate([](void* param) {
+    // Wait for audio to finish
+    while (isPlayingAudio) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    emotionPlaying = false;
+    Serial.printf("🎭 EMOTION COMPLETE: %s\n", (const char*)param);
+    vTaskDelete(NULL);
+  }, "EmotionTask", 2048, (void*)emotionName, 3, NULL);
 }
