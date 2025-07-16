@@ -96,6 +96,9 @@ bool microphoneActive = false; // Track microphone state
 unsigned long startStopButtonPressTime = 0;
 bool isVibrating = false;
 
+// Debug control - set to false to disable verbose touch debug output
+bool enableTouchDebug = false;
+
 // Multitouch and Emotion System Variables
 uint16_t currentTouchState = 0; // Current buttons pressed (bitmask)
 uint16_t lastTouchState = 0;    // Previous touch state
@@ -557,6 +560,13 @@ void playAudio(const char *fname) {
 // ====================================================================================
 void setup() {
   Serial.begin(115200);
+  
+  // Don't wait forever for Serial Monitor - timeout after 2 seconds
+  unsigned long serialTimeout = millis() + 2000;
+  while (!Serial && millis() < serialTimeout) {
+    delay(10);
+  }
+  
   Serial.println("\n\n=== Booting Kubit Robot (Simple Audio) ===");
 
   // Create component objects
@@ -711,9 +721,9 @@ void readTouchButtons() {
   // Count how many buttons are currently pressed
   uint8_t buttonsPressed = countBitsSet(currentTouchState);
   
-  // Debug output when touch state changes
+  // Debug output when touch state changes (only if debug enabled)
   static uint16_t lastDebugState = 0;
-  if (currentTouchState != lastDebugState) {
+  if (enableTouchDebug && currentTouchState != lastDebugState) {
     Serial.printf("🎯 TOUCH STATE: %d buttons pressed, mask=0x%02X (", buttonsPressed, currentTouchState);
     for (int i = 0; i < 8; i++) {
       if (currentTouchState & (1 << i)) {
@@ -733,11 +743,15 @@ void readTouchButtons() {
       // Start of multitouch
       multitouchActive = true;
       touchStartTime = millis();
-      Serial.printf("🖐️ MULTITOUCH START: %d buttons, mask=0x%02X\n", buttonsPressed, currentTouchState);
+      if (enableTouchDebug) {
+        Serial.printf("🖐️ MULTITOUCH START: %d buttons, mask=0x%02X\n", buttonsPressed, currentTouchState);
+      }
     } else if (currentTouchState != lastTouchState) {
       // Touch pattern changed, restart timer
       touchStartTime = millis();
-      Serial.printf("🖐️ MULTITOUCH CHANGED: %d buttons, mask=0x%02X\n", buttonsPressed, currentTouchState);
+      if (enableTouchDebug) {
+        Serial.printf("🖐️ MULTITOUCH CHANGED: %d buttons, mask=0x%02X\n", buttonsPressed, currentTouchState);
+      }
     } else {
       // Check if multitouch has been held long enough and is stable
       if (millis() - touchStartTime >= touchHoldTime) {
@@ -766,7 +780,9 @@ void readTouchButtons() {
         
         // Check if this is a new press (wasn't pressed before)
         if (!(lastTouchState & (1 << i))) {
-          Serial.printf("🔘 SINGLE BUTTON PRESS: %d\n", buttonNumber);
+          if (enableTouchDebug) {
+            Serial.printf("🔘 SINGLE BUTTON PRESS: %d\n", buttonNumber);
+          }
           handleButtonPress(buttonNumber);
         }
         break; // Only process one button for single touch
@@ -777,7 +793,9 @@ void readTouchButtons() {
     for (int i = 0; i < 8; i++) {
       if ((lastTouchState & (1 << i)) && !(currentTouchState & (1 << i))) {
         uint8_t buttonNumber = i + 1; // Convert to 1-based button numbering
-        Serial.printf("🔘 SINGLE BUTTON RELEASE: %d\n", buttonNumber);
+        if (enableTouchDebug) {
+          Serial.printf("🔘 SINGLE BUTTON RELEASE: %d\n", buttonNumber);
+        }
         handleButtonRelease(buttonNumber);
         break; // Only process one button release at a time
       }
