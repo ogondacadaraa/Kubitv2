@@ -98,20 +98,6 @@
 └── README.md                 # This file
 ```
 
-### Removed Components
-To eliminate deprecation warnings, the following components were removed:
-- Infrared sensors and line following
-- ADC-based microphone input
-- Legacy I2S microphone sampling
-- Unused audio input components
 
-
-### Serial Monitor
-Monitor at 115200 baud for debug information:
-- Boot sequence status
-- Component initialization
-- Button press detection
-- Command execution
-- Error messages
 
 
